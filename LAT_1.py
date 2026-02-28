@@ -1,10 +1,28 @@
-print("FAIZA FILE INI SEDANG RUN")
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import json
+import contextily as cx
+import os
 
-# 1. Fungsi DMS (Darjah, Minit, Saat)
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="PUO Geomatik Plotter", layout="wide")
+
+# --- 1. SISTEM PASSWORD (LOCK) ---
+st.sidebar.header("🔒 Akses Sistem")
+password_input = st.sidebar.text_input("Masukkan Password", type="password")
+
+if password_input != "puo2024":
+    if password_input == "":
+        st.warning("⚠️ Halaman dikunci. Sila masukkan password di sidebar.")
+    else:
+        st.error("❌ Password Salah!")
+    st.stop() 
+
+st.sidebar.success("Akses Dibenarkan ✅")
+
+# --- FUNGSI-FUNGSI MATEMATIK & GEOMETRI ---
 def to_dms(deg):
     d = int(deg)
     m = int((deg - d) * 60)
@@ -13,7 +31,6 @@ def to_dms(deg):
     if m == 60: d += 1; m = 0
     return f"{d}°{m:02d}'{s:02.0f}\""
 
-# 2. Fungsi Kira Bearing dan Jarak
 def kira_bearing_jarak(p1, p2):
     de = p2[0] - p1[0]
     dn = p2[1] - p1[1]
@@ -22,114 +39,140 @@ def kira_bearing_jarak(p1, p2):
     bearing = angle if angle >= 0 else angle + 360
     return to_dms(bearing), jarak, bearing
 
-# 3. Fungsi Kira Luas (Metode Shoelace)
 def kira_luas(x, y):
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
-# --- Konfigurasi Halaman ---
-st.set_page_config(page_title="PUO Geomatik", layout="wide")
+# --- FUNGSI EKSPORT KE QGIS (GEOJSON) ---
+def convert_to_geojson(df, luas):
+    features = []
+    coords = []
+    for _, row in df.iterrows():
+        coords.append([float(row['E']), float(row['N'])])
+    coords.append([float(df.iloc[0]['E']), float(df.iloc[0]['N'])]) 
+    
+    poly_feature = {
+        "type": "Feature",
+        "properties": {"Layer": "Lot_Poligon", "Luas_m2": round(luas, 3), "Program": "PUO Geomatik Plotter"},
+        "geometry": {"type": "Polygon", "coordinates": [coords]}
+    }
+    features.append(poly_feature)
 
-# --- Sidebar untuk Muat Naik Logo ---
-st.sidebar.header("⚙️ Konfigurasi Logo")
-uploaded_logo = st.sidebar.file_uploader("Muat naik Logo Organisasi", type=["png", "jpg", "jpeg"])
+    for i, row in df.iterrows():
+        p1 = [row['E'], row['N']]; p2 = [df.iloc[(i + 1) % len(df)]['E'], df.iloc[(i + 1) % len(df)]['N']]
+        brg, dist, _ = kira_bearing_jarak(p1, p2)
+        point_feature = {
+            "type": "Feature",
+            "properties": {"STN": int(row['STN']), "Bearing": brg, "Jarak_m": round(dist, 3)},
+            "geometry": {"type": "Point", "coordinates": [float(row['E']), float(row['N'])]}
+        }
+        features.append(point_feature)
+    return json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
 
-# --- Header ---
-col_logo, col_text = st.columns([1.5, 4], vertical_alignment="center") 
+# --- SIDEBAR TETAPAN ---
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Tetapan Peta")
+on_off_satelit = st.sidebar.checkbox("🌎 Layer Satelit (On/Off)", value=True)
+epsg_code = st.sidebar.text_input("Kod EPSG (Cth: 4390):", "4390")
+margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 100, 5)
 
+st.sidebar.header("🏷️ Tetapan Label")
+papar_stn = st.sidebar.checkbox("Label Stesen (STN)", value=True)
+papar_brg_dist = st.sidebar.checkbox("Bearing & Jarak", value=True)
+papar_luas_label = st.sidebar.checkbox("Label Luas", value=False)
+
+# --- HEADER UTAMA (DENGAN PADDING) ---
+col_logo, col_text = st.columns([1, 4])
 with col_logo:
-    if uploaded_logo is not None:
-        st.image(uploaded_logo, width=250) 
+    st.markdown('<div style="padding-top: 35px;"></div>', unsafe_allow_html=True)
+    current_dir = os.path.dirname(__file__)
+    logo_path = os.path.join(current_dir, "logo l.png")
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=150)
     else:
-        st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo_PUO.png", width=250)
+        st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo_PUO.png", width=150)
 
 with col_text:
-    st.markdown("<h3 style='margin:0;'>POLITEKNIK UNGKU OMAR</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='margin:0; font-size: 1.1rem;'>Jabatan Kejuruteraan Geomatik - Sistem Plot Poligon</p>", unsafe_allow_html=True)
+    st.title("POLITEKNIK UNGKU OMAR")
+    st.subheader("Jabatan Kejuruteraan Geomatik - Plotter Poligon")
 
 st.divider()
 
-# --- Bahagian Muat Naik Fail ---
-uploaded_file = st.file_uploader("📂 Muat naik fail CSV (Pastikan ada kolum STN, E, N)", type=["csv"])
+# --- MUAT NAIK FAIL ---
+uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    
-    st.subheader("📍 Jadual Koordinat Stesen")
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
     if 'E' in df.columns and 'N' in df.columns:
+        # Initialize session state untuk butang luas
         if 'tampilkan_luas' not in st.session_state:
             st.session_state.tampilkan_luas = False
 
-        fig, ax = plt.subplots(figsize=(15, 15)) 
+        luas_semasa = kira_luas(df['E'].values, df['N'].values)
         
-        ax.grid(True, linestyle='--', alpha=0.6, color='gray', zorder=0) 
-        ax.set_xlabel("Easting (E)", fontsize=12)
-        ax.set_ylabel("Northing (N)", fontsize=12)
+        # --- SIDEBAR EKSPORT ---
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🚀 Eksport ke QGIS")
+        geojson_output = convert_to_geojson(df, luas_semasa)
+        st.sidebar.download_button(label="🌍 MUAT TURUN FAIL QGIS", data=geojson_output, file_name="plot_puo.geojson", mime="application/json", type="primary")
+
+        # --- PLOTTING MATPLOTLIB ---
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.grid(True, linestyle='--', alpha=0.6, color='gray', zorder=1) # Tambah Grid
         
         points = df[['E', 'N']].values
         n_points = len(points)
-        cx, cy = np.mean(df['E']), np.mean(df['N'])
+        cx_mean, cy_mean = np.mean(df['E']), np.mean(df['N'])
 
         for i in range(n_points):
-            p1 = points[i]
-            p2 = points[(i + 1) % n_points]
+            p1, p2 = points[i], points[(i + 1) % n_points]
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', marker='o', linewidth=3, zorder=4)
             
-            # Lukis garisan poligon
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='black', marker='o', 
-                    linewidth=3, markersize=8, markerfacecolor='white', zorder=4)
-            
+            # LOGIK LABEL BERPUSING (DARI KOD ATAS)
             brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
-            # Offset Normal
-            dx = p2[0] - p1[0]
-            dy = p2[1] - p1[1]
-            mag = np.sqrt(dx**2 + dy**2)
-            nx, ny = -dy / mag, dx / mag
-            
-            # --- OFFSET DIKECILKAN KE 0.4 AGAR RAPAT DENGAN GARISAN ---
-            offset_val = 0.4  
-            
-            if ((mid_x + nx) - cx)**2 + ((mid_y + ny) - cy)**2 < (mid_x - cx)**2 + (mid_y - cy)**2:
-                nx, ny = -nx, -ny
-            
-            rot = 90 - brg_val
-            if rot < -90: rot += 180
-            if rot > 90: rot -= 180
+            if papar_brg_dist:
+                dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+                mag = np.sqrt(dx**2 + dy**2)
+                nx, ny = -dy/mag, dx/mag # Vektor normal
+                offset_val = 0.6  
+                if ((mid_x + nx) - cx_mean)**2 + ((mid_y + ny) - cy_mean)**2 < (mid_x - cx_mean)**2 + (mid_y - cy_mean)**2:
+                    nx, ny = -nx, -ny
+                
+                rot = 90 - brg_val
+                if rot < -90: rot += 180
+                if rot > 90: rot -= 180
 
-            # Papar Bearing & Jarak (Sangat dekat dengan garisan)
-            ax.text(mid_x + nx*offset_val, mid_y + ny*offset_val, brg_str, 
-                    color='red', fontsize=11, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
-            
-            ax.text(mid_x - nx*offset_val, mid_y - ny*offset_val, f"{dist:.3f}m", 
-                    color='blue', fontsize=10, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
+                ax.text(mid_x + nx*offset_val, mid_y + ny*offset_val, brg_str, color='cyan' if on_off_satelit else 'red', 
+                        fontsize=9, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
+                ax.text(mid_x - nx*offset_val, mid_y - ny*offset_val, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
+                        fontsize=8, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
 
-        # --- LABEL NOMBOR (SANGAT DEKAT DENGAN TITIK) ---
-        for i, row in df.iterrows():
-            vx, vy = row['E'] - cx, row['N'] - cy
-            dist_from_center = np.sqrt(vx**2 + vy**2)
-            
-            offset_dist = 0.5 
-            label_x = row['E'] + (vx / dist_from_center) * offset_dist
-            label_y = row['N'] + (vy / dist_from_center) * offset_dist
-            
-            ax.text(label_x, label_y, f"{int(row['STN'])}", 
-                    fontsize=12, fontweight='bold', ha='center', va='center', zorder=6,
-                    bbox=dict(facecolor='yellow', alpha=0.8, edgecolor='black', boxstyle='round,pad=0.15'))
+        if papar_stn:
+            for _, row in df.iterrows():
+                ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='black', fontweight='bold', 
+                        zorder=6, bbox=dict(facecolor='yellow', alpha=0.8, boxstyle='round'))
 
-        if st.session_state.tampilkan_luas:
-            luas = kira_luas(df['E'].values, df['N'].values)
-            ax.text(cx, cy, f"LUAS\n{luas:.3f} m²", fontsize=18, color='darkgreen', fontweight='bold', 
-                    ha='center', va='center', zorder=7,
-                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='darkgreen', boxstyle='round,pad=0.5'))
-            ax.fill(df['E'], df['N'], alpha=0.1, color='green', zorder=1)
+        # KAWALAN LUAS (BUTANG + CHECKBOX)
+        if st.session_state.tampilkan_luas or papar_luas_label:
+            ax.fill(df['E'], df['N'], alpha=0.2, color='green', zorder=2)
+            ax.text(cx_mean, cy_mean, f"LUAS\n{luas_semasa:.3f} m²", fontsize=14, color='darkgreen', 
+                    fontweight='bold', ha='center', bbox=dict(facecolor='white', alpha=0.7))
+
+        if on_off_satelit:
+            try:
+                cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.Esri.WorldImagery, zorder=0)
+            except:
+                st.error("Gagal muat satelit.")
 
         ax.set_aspect('equal')
-        st.pyplot(fig, use_container_width=True)
+        ax.set_xlim(df['E'].min() - margin_meter, df['E'].max() + margin_meter)
+        ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
+        st.pyplot(fig)
 
+        # BUTANG KIRA LUAS DI BAWAH
         if st.button('📐 Kira & Papar Luas'):
             st.session_state.tampilkan_luas = True
             st.rerun()
-    else:
-        st.error("Ralat: Fail CSV anda tidak mempunyai kolum 'E' and 'N'.")
