@@ -1,0 +1,208 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import json
+import contextily as cx 
+
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="PUO Geomatik Plotter", layout="wide")
+
+# --- 1. SISTEM PASSWORD (LOCK) ---
+st.sidebar.header("🔒 Akses Sistem")
+password_input = st.sidebar.text_input("Masukkan Password", type="password")
+
+# TUKAR PASSWORD ANDA DI SINI
+if password_input != "puo2024":
+    if password_input == "":
+        st.warning("⚠️ Halaman dikunci. Sila masukkan password di sidebar.")
+    else:
+        st.error("❌ Password Salah!")
+    st.stop() 
+
+# --- 2. JIKA PASSWORD BETUL ---
+st.sidebar.success("Akses Dibenarkan ✅")
+
+# --- FUNGSI-FUNGSI MATEMATIK & GEOMETRI ---
+def to_dms(deg):
+    d = int(deg)
+    m = int((deg - d) * 60)
+    s = round((((deg - d) * 60) - m) * 60, 0)
+    if s == 60: m += 1; s = 0
+    if m == 60: d += 1; m = 0
+    return f"{d}°{m:02d}'{s:02.0f}\""
+
+def kira_bearing_jarak(p1, p2):
+    de = p2[0] - p1[0]
+    dn = p2[1] - p1[1]
+    jarak = np.sqrt(de**2 + dn**2)
+    angle = np.degrees(np.arctan2(de, dn))
+    bearing = angle if angle >= 0 else angle + 360
+    return to_dms(bearing), jarak, bearing
+
+def kira_luas(x, y):
+    return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+# --- FUNGSI EKSPORT KE QGIS (GEOJSON) ---
+def convert_to_geojson(df, luas):
+    features = []
+    coords = []
+    
+    # 1. Bina Poligon
+    for _, row in df.iterrows():
+        coords.append([float(row['E']), float(row['N'])])
+    coords.append([float(df.iloc[0]['E']), float(df.iloc[0]['N'])]) 
+    
+    poly_feature = {
+        "type": "Feature",
+        "properties": {
+            "Layer": "Lot_Poligon",
+            "Luas_m2": round(luas, 3),
+            "Program": "PUO Geomatik Plotter"
+        },
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [coords]
+        }
+    }
+    features.append(poly_feature)
+
+    # 2. Bina Titik (Points)
+    for i, row in df.iterrows():
+        p1 = [row['E'], row['N']]
+        p2 = [df.iloc[(i + 1) % len(df)]['E'], df.iloc[(i + 1) % len(df)]['N']]
+        brg, dist, _ = kira_bearing_jarak(p1, p2)
+
+        point_feature = {
+            "type": "Feature",
+            "properties": {
+                "Layer": "Stesen",
+                "STN": int(row['STN']),
+                "Easting": row['E'],
+                "Northing": row['N'],
+                "Bearing_Ke_Next": brg,
+                "Jarak_m": round(dist, 3)
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(row['E']), float(row['N'])]
+            }
+        }
+        features.append(point_feature)
+    
+    return json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
+
+
+# --- SIDEBAR TETAPAN ---
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Tetapan Peta")
+on_off_satelit = st.sidebar.checkbox("🌎 Layer Satelit (On/Off)", value=True)
+epsg_code = st.sidebar.text_input("Kod EPSG (Cth: 4390):", "4390")
+margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 50, 5)
+
+st.sidebar.header("🏷️ Tetapan Label")
+papar_stn = st.sidebar.checkbox("Label Stesen (STN)", value=True)
+papar_brg_dist = st.sidebar.checkbox("Bearing & Jarak", value=True)
+papar_luas_label = st.sidebar.checkbox("Label Luas", value=False)
+
+# --- HEADER UTAMA ---
+import os
+
+# 1. ANDA WAJIB ADA BARIS INI DAHULU
+col_logo, col_text = st.columns([1, 4])
+
+# 2. BARU BOLEH GUNA 'with col_logo'
+with col_logo:
+    # Tambah padding untuk turunkan logo ke bawah sikit
+    st.markdown('<div style="padding-top: 35px;"></div>', unsafe_allow_html=True)
+    
+    current_dir = os.path.dirname(__file__)
+    # Pastikan nama fail "logo l.png" sama tepat dengan di GitHub (termasuk jarak)
+    logo_path = os.path.join(current_dir, "logo l.png")
+    
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=150)
+    else:
+        st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo_PUO.png", width=150)
+        st.caption("Fail logo l.png tidak dikesan.")
+
+with col_text:
+    st.title("POLITEKNIK UNGKU OMAR")
+    st.subheader("Jabatan Kejuruteraan Geomatik - Plotter Poligon")
+
+st.divider()
+
+# --- MUAT NAIK FAIL ---
+uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["csv"])
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.dataframe(df.set_index('STN'), use_container_width=True)
+
+    if 'E' in df.columns and 'N' in df.columns:
+        luas_semasa = kira_luas(df['E'].values, df['N'].values)
+        
+        # --- BUTANG EKSPORT QGIS (Hanya muncul jika ada fail) ---
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🚀 Eksport ke QGIS")
+        geojson_output = convert_to_geojson(df, luas_semasa)
+        
+        st.sidebar.download_button(
+            label="🌍 MUAT TURUN FAIL QGIS (.geojson)",
+            data=geojson_output,
+            file_name="plot_puo_qgis.geojson",
+            mime="application/json",
+            help="Klik untuk muat turun fail yang boleh dibuka terus dalam QGIS.",
+            type="primary"
+        )
+        st.sidebar.info("💡 Cara buka: Tarik fail yang dimuat turun terus ke dalam skrin QGIS anda.")
+
+        # --- PLOTTING MATPLOTLIB ---
+        fig, ax = plt.subplots(figsize=(10, 10))
+        
+        points = df[['E', 'N']].values
+        n_points = len(points)
+        cx_m, cy_m = np.mean(df['E']), np.mean(df['N'])
+
+        for i in range(n_points):
+            p1, p2 = points[i], points[(i + 1) % n_points]
+            # Warna garisan tukar kuning kalau satelit buka supaya terang
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', 
+                    marker='o', linewidth=2, zorder=4)
+            
+            if papar_brg_dist:
+                brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
+                mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
+                ax.text(mid_x, mid_y, f"{brg_str}\n{dist:.3f}m", color='cyan' if on_off_satelit else 'red', 
+                        fontsize=9, fontweight='bold', ha='center', zorder=5)
+
+        if papar_stn:
+            for _, row in df.iterrows():
+                ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='white', 
+                        fontweight='bold', fontsize=12, zorder=6, bbox=dict(facecolor='blue', alpha=0.5))
+
+        if papar_luas_label:
+            ax.fill(df['E'], df['N'], alpha=0.3, color='green')
+            ax.text(cx_m, cy_m, f"LUAS: {luas_semasa:.3f} m²", bbox=dict(facecolor='white', alpha=0.8))
+
+        # --- LAYER SATELIT ---
+        if on_off_satelit:
+            try:
+                # Guna basemap satelit
+                cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.Esri.WorldImagery, zorder=0)
+            except Exception as e:
+                st.error(f"Gagal muat imej satelit. Sila pastikan Kod EPSG betul. Ralat: {e}")
+
+        # Set batas peta mengikut margin
+        min_x, max_x = df['E'].min(), df['E'].max()
+        min_y, max_y = df['N'].min(), df['N'].max()
+        ax.set_xlim(min_x - margin_meter, max_x + margin_meter)
+        ax.set_ylim(min_y - margin_meter, max_y + margin_meter)
+
+        ax.set_aspect('equal')
+
+        st.pyplot(fig)
+
+
+
+
