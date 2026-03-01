@@ -102,6 +102,19 @@ uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["c
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
+
+    # --- LOGIK PELARASAN KOORDINAT (STN 1) ---
+    if 1 in df['STN'].values:
+        stn1 = df[df['STN'] == 1].iloc[0]
+        # Target: N=6757.654, E=115594.785
+        shift_e = 115594.785 - stn1['E']
+        shift_n = 6757.654 - stn1['N']
+        
+        # Anjakkan keseluruhan dataframe
+        df['E'] = df['E'] + shift_e
+        df['N'] = df['N'] + shift_n
+        st.info("📍 **Traverse dilaraskan:** Stesen 1 telah ditetapkan ke koordinat (6757.654N, 115594.785E).")
+
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
     if 'E' in df.columns and 'N' in df.columns:
@@ -124,12 +137,12 @@ if uploaded_file is not None:
         n_points = len(points)
         cx_mean, cy_mean = np.mean(df['E']), np.mean(df['N'])
 
-        # Plot Garisan (Line dikekalkan)
+        # Plot Garisan (Line)
         for i in range(n_points):
             p1, p2 = points[i], points[(i + 1) % n_points]
             ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', marker='o', linewidth=3, zorder=4)
             
-            # Label Bearing & Jarak (Tetap di luar)
+            # Label Traverse (Bearing & Jarak di LUAR)
             brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
@@ -145,21 +158,19 @@ if uploaded_file is not None:
                 if rot < -90: rot += 180
                 if rot > 90: rot -= 180
 
-                ax.text(mid_x + nx*0.6, mid_y + ny*0.6, brg_str, color='cyan' if on_off_satelit else 'red', 
+                ax.text(mid_x + nx*0.7, mid_y + ny*0.7, brg_str, color='cyan' if on_off_satelit else 'red', 
                         fontsize=9, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
-                ax.text(mid_x - nx*0.6, mid_y - ny*0.6, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
+                ax.text(mid_x + nx*1.4, mid_y + ny*1.4, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
                         fontsize=8, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
 
-        # --- UBAHAN PADA LABEL STESEN (KOTAK KUNING) ---
+        # Label Stesen (KOTAK KUNING di LUAR BUCU)
         if papar_stn:
             for _, row in df.iterrows():
-                # Kira arah dari centroid ke bucu (stesen)
                 dx_stn = row['E'] - cx_mean
                 dy_stn = row['N'] - cy_mean
                 dist_stn = np.sqrt(dx_stn**2 + dy_stn**2)
                 
-                # Tolak sedikit koordinat label ke luar (offset 1.2 meter)
-                offset_stn = 1.2
+                offset_stn = 1.5 # Jarak tolak kotak dari bucu
                 label_e = row['E'] + (dx_stn / dist_stn) * offset_stn
                 label_n = row['N'] + (dy_stn / dist_stn) * offset_stn
 
@@ -176,11 +187,11 @@ if uploaded_file is not None:
             try:
                 cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.Esri.WorldImagery, zorder=0)
             except:
-                st.error("Gagal muat satelit.")
+                st.error("Gagal muat satelit. Sila pastikan EPSG betul.")
 
         ax.set_aspect('equal')
-        ax.set_xlim(df['E'].min() - margin_meter, df['E'].max() + margin_meter)
-        ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
+        ax.set_xlim(df['E'].min() - margin_meter - 2, df['E'].max() + margin_meter + 2)
+        ax.set_ylim(df['N'].min() - margin_meter - 2, df['N'].max() + margin_meter + 2)
         st.pyplot(fig)
 
         if st.button('📐 Kira & Papar Luas'):
