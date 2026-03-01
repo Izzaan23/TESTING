@@ -13,7 +13,7 @@ st.set_page_config(page_title="PUO Geomatik Plotter", layout="wide")
 st.sidebar.header("🔒 Akses Sistem")
 password_input = st.sidebar.text_input("Masukkan Password", type="password")
 
-if password_input != "puo2024":
+if password_input != "admin":
     if password_input == "":
         st.warning("⚠️ Halaman dikunci. Sila masukkan password di sidebar.")
     else:
@@ -176,3 +176,4 @@ if uploaded_file is not None:
         if st.button('📐 Kira & Papar Luas'):
             st.session_state.tampilkan_luas = True
             st.rerun()
+
