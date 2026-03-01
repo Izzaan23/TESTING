@@ -124,12 +124,12 @@ if uploaded_file is not None:
         n_points = len(points)
         cx_mean, cy_mean = np.mean(df['E']), np.mean(df['N'])
 
+        # Plot Garisan (Line dikekalkan)
         for i in range(n_points):
             p1, p2 = points[i], points[(i + 1) % n_points]
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', marker='o', linewidth=3, zorder=4)
             
-            # --- UBAHAN DISINI: ALPHA=0 UNTUK HILANGKAN LINE ---
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow', marker='o', linewidth=0, alpha=0, zorder=4)
-            
+            # Label Bearing & Jarak (Tetap di luar)
             brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
@@ -145,18 +145,27 @@ if uploaded_file is not None:
                 if rot < -90: rot += 180
                 if rot > 90: rot -= 180
 
-                offset_val_brg = 0.5  
-                offset_val_dist = 1.1 
-
-                ax.text(mid_x + nx*offset_val_brg, mid_y + ny*offset_val_brg, brg_str, color='cyan' if on_off_satelit else 'red', 
+                ax.text(mid_x + nx*0.6, mid_y + ny*0.6, brg_str, color='cyan' if on_off_satelit else 'red', 
                         fontsize=9, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
-                ax.text(mid_x + nx*offset_val_dist, mid_y + ny*offset_val_dist, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
+                ax.text(mid_x - nx*0.6, mid_y - ny*0.6, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
                         fontsize=8, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
 
+        # --- UBAHAN PADA LABEL STESEN (KOTAK KUNING) ---
         if papar_stn:
             for _, row in df.iterrows():
-                ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='black', fontweight='bold', 
-                        zorder=6, bbox=dict(facecolor='yellow', alpha=0.8, boxstyle='round'))
+                # Kira arah dari centroid ke bucu (stesen)
+                dx_stn = row['E'] - cx_mean
+                dy_stn = row['N'] - cy_mean
+                dist_stn = np.sqrt(dx_stn**2 + dy_stn**2)
+                
+                # Tolak sedikit koordinat label ke luar (offset 1.2 meter)
+                offset_stn = 1.2
+                label_e = row['E'] + (dx_stn / dist_stn) * offset_stn
+                label_n = row['N'] + (dy_stn / dist_stn) * offset_stn
+
+                ax.text(label_e, label_n, f"{int(row['STN'])}", color='black', fontweight='bold', 
+                        fontsize=10, ha='center', va='center',
+                        zorder=6, bbox=dict(facecolor='yellow', alpha=0.9, boxstyle='round,pad=0.3'))
 
         if st.session_state.tampilkan_luas or papar_luas_label:
             ax.fill(df['E'], df['N'], alpha=0.2, color='green', zorder=2)
