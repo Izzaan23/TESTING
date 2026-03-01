@@ -46,6 +46,7 @@ def kira_luas(x, y):
 def convert_to_geojson(df, luas):
     features = []
     coords = []
+    # Koordinat di sini akan menggunakan nilai yang sudah dilaraskan
     for _, row in df.iterrows():
         coords.append([float(row['E']), float(row['N'])])
     coords.append([float(df.iloc[0]['E']), float(df.iloc[0]['N'])]) 
@@ -103,17 +104,27 @@ uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["c
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
-    # --- LOGIK PELARASAN KOORDINAT (STN 1) ---
+    # --- 2. LOGIK PELARASAN KOORDINAT KE STESEN 1 ---
+    # Target: U (N) = 6757.654, B (E) = 115594.785
+    target_n = 6757.654
+    target_e = 115594.785
+
     if 1 in df['STN'].values:
-        stn1 = df[df['STN'] == 1].iloc[0]
-        # Target: N=6757.654, E=115594.785
-        shift_e = 115594.785 - stn1['E']
-        shift_n = 6757.654 - stn1['N']
+        idx_1 = df[df['STN'] == 1].index[0]
+        current_e = df.at[idx_1, 'E']
+        current_n = df.at[idx_1, 'N']
         
-        # Anjakkan keseluruhan dataframe
+        # Kira beza (shift)
+        shift_e = target_e - current_e
+        shift_n = target_n - current_n
+        
+        # Anjakkan keseluruhan data
         df['E'] = df['E'] + shift_e
         df['N'] = df['N'] + shift_n
-        st.info("📍 **Traverse dilaraskan:** Stesen 1 telah ditetapkan ke koordinat (6757.654N, 115594.785E).")
+        
+        st.success(f"✅ Stesen 1 telah ditetapkan ke koordinat: U={target_n}, B={target_e}")
+    else:
+        st.warning("⚠️ Stesen nombor 1 tidak ditemui dalam CSV. Pelarasan koordinat tidak dilakukan.")
 
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
@@ -126,6 +137,7 @@ if uploaded_file is not None:
         # --- SIDEBAR EKSPORT ---
         st.sidebar.markdown("---")
         st.sidebar.subheader("🚀 Eksport ke QGIS")
+        # Fail GeoJSON sekarang akan mempunyai koordinat yang sudah dilaraskan
         geojson_output = convert_to_geojson(df, luas_semasa)
         st.sidebar.download_button(label="🌍 MUAT TURUN FAIL QGIS", data=geojson_output, file_name="plot_puo.geojson", mime="application/json", type="primary")
 
@@ -137,12 +149,10 @@ if uploaded_file is not None:
         n_points = len(points)
         cx_mean, cy_mean = np.mean(df['E']), np.mean(df['N'])
 
-        # Plot Garisan (Line)
         for i in range(n_points):
             p1, p2 = points[i], points[(i + 1) % n_points]
             ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', marker='o', linewidth=3, zorder=4)
             
-            # Label Traverse (Bearing & Jarak di LUAR)
             brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
@@ -158,21 +168,22 @@ if uploaded_file is not None:
                 if rot < -90: rot += 180
                 if rot > 90: rot -= 180
 
+                # Label di luar garisan
                 ax.text(mid_x + nx*0.7, mid_y + ny*0.7, brg_str, color='cyan' if on_off_satelit else 'red', 
                         fontsize=9, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
                 ax.text(mid_x + nx*1.4, mid_y + ny*1.4, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
                         fontsize=8, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
 
-        # Label Stesen (KOTAK KUNING di LUAR BUCU)
+        # Label Stesen (Kotak Kuning di luar bucu)
         if papar_stn:
             for _, row in df.iterrows():
-                dx_stn = row['E'] - cx_mean
-                dy_stn = row['N'] - cy_mean
-                dist_stn = np.sqrt(dx_stn**2 + dy_stn**2)
+                dx_s = row['E'] - cx_mean
+                dy_s = row['N'] - cy_mean
+                dist_s = np.sqrt(dx_s**2 + dy_s**2)
                 
-                offset_stn = 1.5 # Jarak tolak kotak dari bucu
-                label_e = row['E'] + (dx_stn / dist_stn) * offset_stn
-                label_n = row['N'] + (dy_stn / dist_stn) * offset_stn
+                offset = 1.6
+                label_e = row['E'] + (dx_s / dist_s) * offset
+                label_n = row['N'] + (dy_s / dist_s) * offset
 
                 ax.text(label_e, label_n, f"{int(row['STN'])}", color='black', fontweight='bold', 
                         fontsize=10, ha='center', va='center',
@@ -187,7 +198,7 @@ if uploaded_file is not None:
             try:
                 cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.Esri.WorldImagery, zorder=0)
             except:
-                st.error("Gagal muat satelit. Sila pastikan EPSG betul.")
+                st.error("Gagal muat satelit. Pastikan Kod EPSG betul.")
 
         ax.set_aspect('equal')
         ax.set_xlim(df['E'].min() - margin_meter - 2, df['E'].max() + margin_meter + 2)
