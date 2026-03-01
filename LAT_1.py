@@ -80,7 +80,7 @@ papar_stn = st.sidebar.checkbox("Label Stesen (STN)", value=True)
 papar_brg_dist = st.sidebar.checkbox("Bearing & Jarak", value=True)
 papar_luas_label = st.sidebar.checkbox("Label Luas", value=False)
 
-# --- HEADER UTAMA (DENGAN PADDING) ---
+# --- HEADER UTAMA ---
 col_logo, col_text = st.columns([1, 4])
 with col_logo:
     st.markdown('<div style="padding-top: 35px;"></div>', unsafe_allow_html=True)
@@ -105,7 +105,6 @@ if uploaded_file is not None:
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
     if 'E' in df.columns and 'N' in df.columns:
-        # Initialize session state untuk butang luas
         if 'tampilkan_luas' not in st.session_state:
             st.session_state.tampilkan_luas = False
 
@@ -119,7 +118,7 @@ if uploaded_file is not None:
 
         # --- PLOTTING MATPLOTLIB ---
         fig, ax = plt.subplots(figsize=(10, 10))
-        ax.grid(True, linestyle='--', alpha=0.6, color='gray', zorder=1) # Tambah Grid
+        ax.grid(True, linestyle='--', alpha=0.6, color='gray', zorder=1)
         
         points = df[['E', 'N']].values
         n_points = len(points)
@@ -127,17 +126,18 @@ if uploaded_file is not None:
 
         for i in range(n_points):
             p1, p2 = points[i], points[(i + 1) % n_points]
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow' if on_off_satelit else 'black', marker='o', linewidth=3, zorder=4)
             
-            # LOGIK LABEL BERPUSING (DARI KOD ATAS)
+            # --- UBAHAN DISINI: ALPHA=0 UNTUK HILANGKAN LINE ---
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='yellow', marker='o', linewidth=0, alpha=0, zorder=4)
+            
             brg_str, dist, brg_val = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
             if papar_brg_dist:
                 dx, dy = p2[0] - p1[0], p2[1] - p1[1]
                 mag = np.sqrt(dx**2 + dy**2)
-                nx, ny = -dy/mag, dx/mag # Vektor normal
-                offset_val = 0.6  
+                nx, ny = -dy/mag, dx/mag 
+                
                 if ((mid_x + nx) - cx_mean)**2 + ((mid_y + ny) - cy_mean)**2 < (mid_x - cx_mean)**2 + (mid_y - cy_mean)**2:
                     nx, ny = -nx, -ny
                 
@@ -145,9 +145,12 @@ if uploaded_file is not None:
                 if rot < -90: rot += 180
                 if rot > 90: rot -= 180
 
-                ax.text(mid_x + nx*offset_val, mid_y + ny*offset_val, brg_str, color='cyan' if on_off_satelit else 'red', 
+                offset_val_brg = 0.5  
+                offset_val_dist = 1.1 
+
+                ax.text(mid_x + nx*offset_val_brg, mid_y + ny*offset_val_brg, brg_str, color='cyan' if on_off_satelit else 'red', 
                         fontsize=9, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
-                ax.text(mid_x - nx*offset_val, mid_y - ny*offset_val, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
+                ax.text(mid_x + nx*offset_val_dist, mid_y + ny*offset_val_dist, f"{dist:.3f}m", color='white' if on_off_satelit else 'blue', 
                         fontsize=8, fontweight='bold', ha='center', va='center', rotation=rot, zorder=5)
 
         if papar_stn:
@@ -155,7 +158,6 @@ if uploaded_file is not None:
                 ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='black', fontweight='bold', 
                         zorder=6, bbox=dict(facecolor='yellow', alpha=0.8, boxstyle='round'))
 
-        # KAWALAN LUAS (BUTANG + CHECKBOX)
         if st.session_state.tampilkan_luas or papar_luas_label:
             ax.fill(df['E'], df['N'], alpha=0.2, color='green', zorder=2)
             ax.text(cx_mean, cy_mean, f"LUAS\n{luas_semasa:.3f} m²", fontsize=14, color='darkgreen', 
@@ -172,8 +174,6 @@ if uploaded_file is not None:
         ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
         st.pyplot(fig)
 
-        # BUTANG KIRA LUAS DI BAWAH
         if st.button('📐 Kira & Papar Luas'):
             st.session_state.tampilkan_luas = True
             st.rerun()
-
