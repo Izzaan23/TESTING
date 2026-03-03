@@ -21,18 +21,31 @@ if "page" not in st.session_state:
 
 # --- 3. ANTARAMUKA LOG MASUK ---
 if not st.session_state.logged_in:
-    _, col_mid, _ = st.columns([0.5, 3, 0.5]) # Lebarkan sikit col_mid untuk muat satu baris
+    # Guna columns yang lebih lebar untuk memuatkan logo besar dan tajuk panjang
+    _, col_mid, _ = st.columns([0.1, 4, 0.1]) 
     with col_mid:
         st.markdown("<br><br>", unsafe_allow_html=True)
         
-        # --- BAHAGIAN LOGO & TITLE SEJAJAR ---
-        head_l, head_r = st.columns([1, 4])
+        # --- BAHAGIAN LOGO & TITLE SEJAJAR (VERSI BESAR) ---
+        # Kita kecilkan nisbah column kiri (logo) supaya teks ada lebih ruang
+        head_l, head_r = st.columns([1, 2.5]) 
+        
         with head_l:
             if os.path.exists("logo l.png"):
-                st.image("logo l.png", width=120)
-        with head_r:
-            st.markdown("<h2 style='margin-top: 30px;'>SISTEM PENGURUSAN MAKLUMAT TANAH</h2>", unsafe_allow_html=True)
+                # Kita besarkan width ke 250 supaya sama macam gambar rujukan
+                st.image("logo l.png", width=250) 
         
+        with head_r:
+            # Guna HTML untuk pastikan teks besar, bold, dan sejajar tengah (vertical align)
+            st.markdown("""
+                <div style='display: flex; align-items: center; height: 150px;'>
+                    <h1 style='margin: 0; font-size: 45px; font-weight: 800; line-height: 1.2;'>
+                        SISTEM PENGURUSAN <br> MAKLUMAT TANAH
+                    </h1>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("---")
         
         if st.session_state.page == "reset":
@@ -180,3 +193,4 @@ if uploaded_file is not None:
 
 st.markdown("---")
 st.caption("Pembangun Sistem: Izzaan | Geomatics PUO | Sidebar Dashboard Mode")
+
