@@ -48,7 +48,12 @@ def kira_luas(x, y):
 # --- SIDEBAR TETAPAN ---
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Tetapan Paparan")
-pilihan_peta = st.sidebar.selectbox("🗺️ Peta Latar:", ["Tiada Peta", "OpenStreetMap", "Google Satellite"])
+
+# Pilihan Peta (Kemas kini logik Google)
+pilihan_peta = st.sidebar.selectbox(
+    "🗺️ Peta Latar:", 
+    ["Tiada Peta", "OpenStreetMap", "Esri World Imagery", "Google Satellite", "Google Hybrid"]
+)
 on_off_satelit = pilihan_peta != "Tiada Peta"
 
 st.sidebar.markdown("---")
@@ -73,7 +78,6 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.upper() for c in df.columns]
 
-    # Pelarasan Stesen 1 (Perak)
     target_n, target_e = 6757.654, 115594.785
     if 'STN' in df.columns and 1 in df['STN'].values:
         idx_1 = df[df['STN'] == 1].index[0]
@@ -84,57 +88,58 @@ if uploaded_file is not None:
         luas_semasa = kira_luas(df['E'].values, df['N'].values)
         fig, ax = plt.subplots(figsize=(12, 12))
         
-        warna_garisan = 'yellow' if on_off_satelit else 'black'
-        warna_brg = 'cyan' if on_off_satelit else 'darkred'
-        warna_dist = 'white' if on_off_satelit else 'blue'
-        warna_stn = 'yellow' if on_off_satelit else 'black'
+        # Warna ikut mod peta
+        is_dark = "Satellite" in pilihan_peta or "Imagery" in pilihan_peta or "Hybrid" in pilihan_peta
+        warna_garisan = 'yellow' if is_dark else 'black'
+        warna_brg = 'cyan' if is_dark else 'darkred'
+        warna_dist = 'white' if is_dark else 'blue'
+        warna_stn = 'yellow' if is_dark else 'black'
 
         points = df[['E', 'N']].values
         cx_mean, cy_mean = np.mean(df['E']), np.mean(df['N'])
 
-        # --- LOOP PLOTTING ---
         for i in range(len(points)):
-            p1 = points[i]
-            p2 = points[(i + 1) % len(points)]
-            
-            # Plot Garisan
+            p1, p2 = points[i], points[(i + 1) % len(points)]
             ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=warna_garisan, marker='o', markersize=3, linewidth=1.5, zorder=5)
-            
-            # Kira Bearing/Jarak & Kedudukan Tengah
             brg_str, dist_val, brg_deg = kira_bearing_jarak(p1, p2)
             mid_x, mid_y = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             
-            # LOGIK ROTASI TEKS (Agar sentiasa boleh dibaca dari bawah/kanan)
             txt_rot = 90 - brg_deg
             if txt_rot < -90: txt_rot += 180
             if txt_rot > 90: txt_rot -= 180
             
-            # Papar Bearing (Atas Garisan)
             ax.text(mid_x, mid_y, brg_str, color=warna_brg, fontsize=saiz_bearing, 
                     rotation=txt_rot, ha='center', va='bottom', fontweight='bold', rotation_mode='anchor')
-            
-            # Papar Jarak (Bawah Garisan)
             ax.text(mid_x, mid_y, f"{dist_val:.3f}m", color=warna_dist, fontsize=saiz_jarak, 
                     rotation=txt_rot, ha='center', va='top', fontweight='bold', rotation_mode='anchor')
 
-        # --- NO STESEN (DI LUAR) ---
         for _, row in df.iterrows():
             dx, dy = row['E'] - cx_mean, row['N'] - cy_mean
             mag = np.sqrt(dx**2 + dy**2)
             ax.text(row['E'] + (dx/mag)*jarak_offset_stn, row['N'] + (dy/mag)*jarak_offset_stn, 
                     str(int(row['STN'])), color=warna_stn, fontsize=saiz_stn, fontweight='bold', ha='center', va='center')
 
-        # --- PETA & KEMASAN ---
+        # --- LOGIK PANGGIL GOOGLE SATELLITE ---
         if on_off_satelit:
             try:
-                src = cx.providers.Esri.WorldImagery if "Satellite" in pilihan_peta else cx.providers.OpenStreetMap.Mapnik
-                cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=src, zoom='auto', zorder=0)
-            except: pass
+                if pilihan_peta == "Google Satellite":
+                    # Panggil URL Google Satellite secara manual
+                    url_google = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                    cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=url_google, zoom='auto', zorder=0)
+                elif pilihan_peta == "Google Hybrid":
+                    url_hybrid = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+                    cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=url_hybrid, zoom='auto', zorder=0)
+                elif pilihan_peta == "Esri World Imagery":
+                    cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.Esri.WorldImagery, zoom='auto', zorder=0)
+                else:
+                    cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=cx.providers.OpenStreetMap.Mapnik, zoom='auto', zorder=0)
+            except Exception as e:
+                st.sidebar.error(f"Gagal muat peta: {e}")
 
         ax.set_aspect('equal')
         ax.set_xlim(df['E'].min() - margin_meter, df['E'].max() + margin_meter)
         ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
-        ax.axis('off') # Buang border kotak graf supaya lebih "clean"
+        ax.axis('off') 
         
         st.pyplot(fig)
         st.write(f"📐 **Luas Poligon:** {luas_semasa:.3f} meter persegi")
