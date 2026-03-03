@@ -17,7 +17,6 @@ user_id = st.sidebar.text_input("ID Pengguna", placeholder="Masukkan ID anda")
 password_input = st.sidebar.text_input("Kata Laluan", type="password", placeholder="Masukkan Password")
 
 # Logik Pengesahan
-# Anda boleh tambah lebih banyak ID di sini jika mahu
 if user_id == "admin" and password_input == "admin123":
     st.sidebar.success(f"Log Masuk Berjaya: {user_id.upper()} ✅")
 else:
@@ -26,7 +25,6 @@ else:
     else:
         st.error("❌ ID atau Password Salah!")
     
-    # --- Butang Lupa Password ---
     st.sidebar.markdown("---")
     if st.sidebar.button("❓ Lupa Kata Laluan?"):
         st.sidebar.info("""
@@ -35,7 +33,7 @@ else:
         
         📧 *admin.geomatik@puo.edu.my*
         """)
-    st.stop() # Hentikan aplikasi jika belum login berjaya
+    st.stop() 
 
 # --- FUNGSI-FUNGSI MATEMATIK ---
 def to_dms(deg):
@@ -66,19 +64,19 @@ pilihan_peta = st.sidebar.selectbox(
     ["Tiada Peta", "OpenStreetMap (Jalan)", "Google Satellite", "Google Hybrid"]
 )
 
-# Definisi variable kawalan supaya tidak error (NameError)
 on_off_satelit = pilihan_peta != "Tiada Peta"
 papar_stn = st.sidebar.checkbox("Papar No. Stesen", value=True)
 papar_brg_dist = st.sidebar.checkbox("Papar Bearing & Jarak", value=True)
 papar_luas_label = st.sidebar.checkbox("Papar Label Luas", value=False)
 
 epsg_code = st.sidebar.text_input("Kod EPSG (Cth Cassini Perak: 4390):", "4390")
-margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 100, 5)
+margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 500, 50)
 
 # --- HEADER UTAMA ---
 col_logo, col_text = st.columns([1, 4])
 with col_logo:
-    st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo l.png", width=120)
+    # Menggunakan logo PUO rasmi
+    st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo_PUO.png", width=120)
 
 with col_text:
     st.title("POLITEKNIK UNGKU OMAR")
@@ -93,7 +91,7 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.upper() for c in df.columns]
 
-    # Target Koordinat Stesen 1
+    # Koordinat Target Stesen 1 (Perak)
     target_n, target_e = 6757.654, 115594.785
 
     if 'STN' in df.columns and 1 in df['STN'].values:
@@ -103,6 +101,8 @@ if uploaded_file is not None:
         df['E'] += shift_e
         df['N'] += shift_n
         st.success(f"📍 Stesen 1 dilaraskan ke: U={target_n}, B={target_e}")
+    else:
+        st.error("⚠️ Fail CSV mesti mempunyai kolum 'STN' dengan nilai '1' untuk pelarasan.")
 
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
@@ -115,7 +115,6 @@ if uploaded_file is not None:
         # --- PLOTTING MATPLOTLIB ---
         fig, ax = plt.subplots(figsize=(10, 10))
         
-        # Warna ikut mod peta
         warna_garisan = 'yellow' if on_off_satelit else 'black'
         warna_teks = 'cyan' if on_off_satelit else 'red'
 
@@ -144,12 +143,14 @@ if uploaded_file is not None:
             ax.fill(df['E'], df['N'], alpha=0.3, color='green', zorder=2)
             ax.text(cx_mean, cy_mean, f"LUAS\n{luas_semasa:.3f} m²", fontsize=12, color='darkgreen', fontweight='bold', ha='center', bbox=dict(facecolor='white', alpha=0.8))
 
-       if on_off_satelit:
+        # --- LOGIK SATELIT ---
+        if on_off_satelit:
             try:
-                # Kita gunakan Esri kerana ia lebih stabil untuk koordinat Cassini
+                # Menggunakan Esri World Imagery (Lebih stabil untuk Cassini)
                 source_peta = cx.providers.Esri.WorldImagery
+                if "OpenStreetMap" in pilihan_peta:
+                    source_peta = cx.providers.OpenStreetMap.Mapnik
                 
-                # Tambah basemap dengan zoom='auto' untuk elakkan "Map data not available"
                 cx.add_basemap(ax, 
                                crs=f"EPSG:{epsg_code}", 
                                source=source_peta, 
@@ -157,12 +158,15 @@ if uploaded_file is not None:
                                zorder=0)
             except Exception as e:
                 st.error(f"⚠️ Ralat Peta: {e}")
-                st.info("Tips: Cuba besarkan 'Margin Meter' di sidebar kepada 50 atau lebih.")
+                st.info("Sila pastikan Kod EPSG (Perak: 4390) dan internet anda stabil.")
 
         ax.set_aspect('equal')
+        # Menambah margin dinamik berdasarkan slider
+        ax.set_xlim(df['E'].min() - margin_meter, df['E'].max() + margin_meter)
+        ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
+        
         st.pyplot(fig)
 
         if st.button('📐 Kira & Papar Luas'):
             st.session_state.tampilkan_luas = True
             st.rerun()
-
