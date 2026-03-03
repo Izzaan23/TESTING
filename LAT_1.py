@@ -12,11 +12,9 @@ st.set_page_config(page_title="PUO Geomatik Plotter", layout="wide")
 # --- 2. SISTEM AKSES (ID & PASSWORD) ---
 st.sidebar.header("🔒 Akses Sistem")
 
-# Input untuk ID dan Password
 user_id = st.sidebar.text_input("ID Pengguna", placeholder="Masukkan ID anda")
 password_input = st.sidebar.text_input("Kata Laluan", type="password", placeholder="Masukkan Password")
 
-# Logik Pengesahan
 if user_id == "admin" and password_input == "admin123":
     st.sidebar.success(f"Log Masuk Berjaya: {user_id.upper()} ✅")
 else:
@@ -29,8 +27,7 @@ else:
     if st.sidebar.button("❓ Lupa Kata Laluan?"):
         st.sidebar.info("""
         **Bantuan Pemulihan:**
-        Sila hubungi Admin Jabatan Geomatik PUO atau pensyarah anda untuk mendapatkan semula akses.
-        
+        Sila hubungi Admin Jabatan Geomatik PUO atau pensyarah anda.
         📧 *admin.geomatik@puo.edu.my*
         """)
     st.stop() 
@@ -55,7 +52,7 @@ def kira_bearing_jarak(p1, p2):
 def kira_luas(x, y):
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
-# --- SIDEBAR TETAPAN PETA ---
+# --- SIDEBAR TETAPAN PETA & SAIZ TEKS ---
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Tetapan Peta")
 
@@ -69,13 +66,20 @@ papar_stn = st.sidebar.checkbox("Papar No. Stesen", value=True)
 papar_brg_dist = st.sidebar.checkbox("Papar Bearing & Jarak", value=True)
 papar_luas_label = st.sidebar.checkbox("Papar Label Luas", value=False)
 
+st.sidebar.markdown("---")
+st.sidebar.header("📏 Saiz Tulisan (Font Size)")
+# Slider baru untuk kawalan saiz teks
+saiz_stn = st.sidebar.slider("Saiz No. Stesen", 5, 20, 10)
+saiz_bearing = st.sidebar.slider("Saiz Teks Bearing", 5, 15, 8)
+saiz_jarak = st.sidebar.slider("Saiz Teks Jarak", 5, 15, 7)
+
+st.sidebar.markdown("---")
 epsg_code = st.sidebar.text_input("Kod EPSG (Cth Cassini Perak: 4390):", "4390")
 margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 500, 50)
 
 # --- HEADER UTAMA ---
 col_logo, col_text = st.columns([1, 4])
 with col_logo:
-    # Menggunakan logo PUO rasmi
     st.image("https://upload.wikimedia.org/wikipedia/ms/thumb/0/05/Logo_PUO.png/200px-Logo_PUO.png", width=120)
 
 with col_text:
@@ -101,8 +105,6 @@ if uploaded_file is not None:
         df['E'] += shift_e
         df['N'] += shift_n
         st.success(f"📍 Stesen 1 dilaraskan ke: U={target_n}, B={target_e}")
-    else:
-        st.error("⚠️ Fail CSV mesti mempunyai kolum 'STN' dengan nilai '1' untuk pelarasan.")
 
     st.dataframe(df.set_index('STN'), use_container_width=True)
 
@@ -116,7 +118,8 @@ if uploaded_file is not None:
         fig, ax = plt.subplots(figsize=(10, 10))
         
         warna_garisan = 'yellow' if on_off_satelit else 'black'
-        warna_teks = 'cyan' if on_off_satelit else 'red'
+        warna_teks_brg = 'cyan' if on_off_satelit else 'red'
+        warna_teks_dist = 'white' if on_off_satelit else 'blue'
 
         points = df[['E', 'N']].values
         n_points = len(points)
@@ -133,35 +136,34 @@ if uploaded_file is not None:
                 rot = 90 - brg_val
                 if rot < -90: rot += 180
                 if rot > 90: rot -= 180
-                ax.text(mid_x, mid_y, f"{brg_str}\n{dist:.3f}m", color=warna_teks, fontsize=8, rotation=rot, ha='center', fontweight='bold')
+                
+                # Papar Bearing (Menggunakan saiz dari slider)
+                ax.text(mid_x, mid_y, f"{brg_str}", color=warna_teks_brg, 
+                        fontsize=saiz_bearing, rotation=rot, ha='center', fontweight='bold', va='bottom')
+                
+                # Papar Jarak (Menggunakan saiz dari slider)
+                ax.text(mid_x, mid_y, f"{dist:.3f}m", color=warna_teks_dist, 
+                        fontsize=saiz_jarak, rotation=rot, ha='center', fontweight='bold', va='top')
 
         if papar_stn:
             for _, row in df.iterrows():
-                ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='black', fontweight='bold', bbox=dict(facecolor='yellow', alpha=0.7))
+                # Papar No Stesen (Menggunakan saiz dari slider)
+                ax.text(row['E'], row['N'], f" {int(row['STN'])}", color='black', 
+                        fontsize=saiz_stn, fontweight='bold', bbox=dict(facecolor='yellow', alpha=0.7, boxstyle='round'))
 
         if st.session_state.tampilkan_luas or papar_luas_label:
             ax.fill(df['E'], df['N'], alpha=0.3, color='green', zorder=2)
-            ax.text(cx_mean, cy_mean, f"LUAS\n{luas_semasa:.3f} m²", fontsize=12, color='darkgreen', fontweight='bold', ha='center', bbox=dict(facecolor='white', alpha=0.8))
+            ax.text(cx_mean, cy_mean, f"LUAS\n{luas_semasa:.3f} m²", fontsize=14, 
+                    color='darkgreen', fontweight='bold', ha='center', bbox=dict(facecolor='white', alpha=0.8))
 
-        # --- LOGIK SATELIT ---
         if on_off_satelit:
             try:
-                # Menggunakan Esri World Imagery (Lebih stabil untuk Cassini)
                 source_peta = cx.providers.Esri.WorldImagery
-                if "OpenStreetMap" in pilihan_peta:
-                    source_peta = cx.providers.OpenStreetMap.Mapnik
-                
-                cx.add_basemap(ax, 
-                               crs=f"EPSG:{epsg_code}", 
-                               source=source_peta, 
-                               zoom='auto', 
-                               zorder=0)
+                cx.add_basemap(ax, crs=f"EPSG:{epsg_code}", source=source_peta, zoom='auto', zorder=0)
             except Exception as e:
                 st.error(f"⚠️ Ralat Peta: {e}")
-                st.info("Sila pastikan Kod EPSG (Perak: 4390) dan internet anda stabil.")
 
         ax.set_aspect('equal')
-        # Menambah margin dinamik berdasarkan slider
         ax.set_xlim(df['E'].min() - margin_meter, df['E'].max() + margin_meter)
         ax.set_ylim(df['N'].min() - margin_meter, df['N'].max() + margin_meter)
         
