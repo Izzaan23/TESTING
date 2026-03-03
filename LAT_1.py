@@ -164,9 +164,8 @@ if uploaded_file is not None:
             folium.map.Marker(
                 [df['lat'].mean(), df['lon'].mean()],
                 icon=folium.DivIcon(html=f"""
-                    <div style="text-align: center; width: 150px; margin-left: -75px; pointer-events: none;">
-                        <b style="font-size: {s_luas-4}pt; color: white; text-shadow: 2px 2px 4px black;">LUAS</b><br>
-                        <b style="font-size: {s_luas}pt; color: #00FF00; text-shadow: 2px 2px 4px black;">{luas_m2:.2f} m²</b>
+                    <div style="text-align: center; width: 200px; margin-left: -100px; pointer-events: none;">
+                        <b style="font-size: {s_luas}pt; color: white; text-shadow: 2px 2px 4px black;">LUAS: {luas_m2:.2f} m²</b>
                     </div>""")
             ).add_to(m)
 
@@ -182,7 +181,7 @@ if uploaded_file is not None:
             if p_stn:
                 folium.map.Marker(
                     [p1_row['lat'], p1_row['lon']],
-                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: yellow; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>"),
+                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: black; font-weight: bold; font-size: {s_stn}pt; width: 40px;'>{int(p1_row['STN'])}</div>"),
                     popup=folium.Popup(coord_html, max_width=150)
                 ).add_to(m)
 
@@ -190,16 +189,15 @@ if uploaded_file is not None:
                 brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
                 mid_lat, mid_lon = (p1_row['lat'] + p2_row['lat'])/2, (p1_row['lon'] + p2_row['lon'])/2
                 
-                # Gunakan column untuk bearing atas, distance bawah
-                # Jika flipped, kita terbalikkan order supaya bearing sentiasa "di atas" garisan secara visual
+                # Mengatur arah flexbox supaya bearing di atas dan distance di bawah
                 flex_dir = "column-reverse" if flipped else "column"
                 
                 folium.map.Marker(
                     [mid_lat, mid_lon],
                     icon=folium.DivIcon(html=f"""
-                        <div style="transform: rotate({-angle}deg); display: flex; flex-direction: {flex_dir}; align-items: center; justify-content: center; width: 140px; margin-left: -70px; pointer-events: none;">
-                            <div style="font-size: {s_brg}pt; color: #FF0000; font-weight: bold; text-shadow: 1px 1px 2px black;">{brg_txt}</div>
-                            <div style="font-size: {s_brg-1}pt; color: #FFFFFF; font-weight: bold; text-shadow: 1px 1px 2px black;">{dst_val:.2f}m</div>
+                        <div style="transform: rotate({-angle}deg); display: flex; flex-direction: {flex_dir}; align-items: center; justify-content: center; width: 150px; margin-left: -75px; pointer-events: none; line-height: 1.1;">
+                            <div style="font-size: {s_brg}pt; color: #FF0000; font-weight: bold; text-shadow: 0.5px 0.5px 1px black; margin-bottom: 2px;">{brg_txt}</div>
+                            <div style="font-size: {s_brg-1}pt; color: #0000FF; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{dst_val:.2f}m</div>
                         </div>""")
                 ).add_to(m)
 
