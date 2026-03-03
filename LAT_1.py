@@ -81,14 +81,15 @@ def convert_to_geojson(df, luas, epsg):
 # --- SIDEBAR TETAPAN ---
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Tetapan Peta")
-on_off_satelit = st.sidebar.checkbox("🌎 Layer Satelit (On/Off)", value=True)
+
+# Pilihan jenis peta
+pilihan_peta = st.sidebar.selectbox(
+    "🗺️ Jenis Paparan Peta:",
+    ["Tiada Peta", "OpenStreetMap (Jalan)", "Google Satellite", "Google Hybrid (Satelit + Jalan)"]
+)
+
 epsg_code = st.sidebar.text_input("Kod EPSG (Cth Cassini Perak: 4390):", "4390")
 margin_meter = st.sidebar.slider("🔍 Zum Keluar (Margin Meter)", 0, 100, 5)
-
-st.sidebar.header("🏷️ Tetapan Label")
-papar_stn = st.sidebar.checkbox("Label Stesen (STN)", value=True)
-papar_brg_dist = st.sidebar.checkbox("Bearing & Jarak", value=True)
-papar_luas_label = st.sidebar.checkbox("Label Luas", value=False)
 
 # --- HEADER UTAMA ---
 col_logo, col_text = st.columns([1, 4])
@@ -148,6 +149,19 @@ if uploaded_file is not None:
 
         # --- PLOTTING MATPLOTLIB ---
         fig, ax = plt.subplots(figsize=(10, 10))
+        # --- LOGIK BASEMAP (PETA LATAR) ---
+        source_peta = None
+        if pilihan_peta == "OpenStreetMap (Jalan)":
+            source_peta = cx.providers.OpenStreetMap.Mapnik
+        elif pilihan_peta == "Google Satellite":
+            source_peta = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+        elif pilihan_peta == "Google Hybrid (Satelit + Jalan)":
+            source_peta = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+
+        # Tukar warna garisan ikut jenis peta supaya nampak jelas
+        warna_garisan = 'yellow' if "Google" in pilihan_peta else 'black'
+        warna_teks_brg = 'cyan' if "Google" in pilihan_peta else 'red'
+        warna_teks_dist = 'white' if "Google" in pilihan_peta else 'blue'
         ax.grid(True, linestyle='--', alpha=0.6, color='gray', zorder=1)
         
         points = df[['E', 'N']].values
@@ -202,3 +216,4 @@ if uploaded_file is not None:
         if st.button('📐 Kira & Papar Luas'):
             st.session_state.tampilkan_luas = True
             st.rerun()
+
