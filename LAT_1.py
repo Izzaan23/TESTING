@@ -89,35 +89,23 @@ def kira_luas(df):
     y = df['N'].values
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
-# --- 5. SIDEBAR (DASHBOARD TETAPAN IKUT GAMBAR) ---
+# --- 5. SIDEBAR (DASHBOARD TETAPAN) ---
 st.sidebar.title("🏠 Dashboard Tetapan")
 st.sidebar.markdown("---")
-
-# Slider untuk saiz point (titik merah)
 p_point = st.sidebar.checkbox("Papar Point Stesen", value=True)
 s_point = st.sidebar.slider("Saiz Point Stesen", 1, 15, 5)
 st.sidebar.markdown("---")
-
 st.sidebar.subheader("🏷️ Tetapan Label")
-
-# Checkbox & Slider untuk No. Stesen
 p_stn = st.sidebar.checkbox("Papar Label No. Stesen (STN)", value=True)
 s_stn = st.sidebar.slider("Saiz Tulisan Stesen", 5, 25, 12)
 st.sidebar.markdown("---")
-
-# Checkbox & Slider untuk Bearing & Jarak
 p_lbl = st.sidebar.checkbox("Papar Bearing & Jarak", value=True)
 s_brg = st.sidebar.slider("Saiz Teks Brg/Jarak", 5, 20, 10)
 st.sidebar.markdown("---")
-
-# Checkbox & Slider untuk Luas
 p_luas = st.sidebar.checkbox("Papar Label Luas", value=True)
 s_luas = st.sidebar.slider("Saiz Label Luas", 5, 30, 17)
 st.sidebar.markdown("---")
-
-# Tetapan Imej Satelit (Global)
 p_sat = st.sidebar.toggle("Papar Imej Satelit", value=True)
-
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Log Keluar", use_container_width=True):
     st.session_state.logged_in = False
@@ -143,14 +131,35 @@ if uploaded_file is not None:
             google_url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
             folium.TileLayer(tiles=google_url, attr='Google', name='Google Satellite', max_zoom=22).add_to(m)
 
+        # Pengiraan Luas & Perimeter
         luas_m2 = kira_luas(df)
+        perimeter = 0
+        bil_garis = len(df)
+        for i in range(bil_garis):
+            p1 = [df.iloc[i]['E'], df.iloc[i]['N']]
+            p2 = [df.iloc[(i+1)%bil_garis]['E'], df.iloc[(i+1)%bil_garis]['N']]
+            _, d, _, _ = kira_brg_dst(p1, p2)
+            perimeter += d
+
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
         
+        # Info Lot semasa tekan poligon
+        info_lot_html = f"""
+            <div style="font-family: Arial; width: 200px;">
+                <h4 style="margin:0; color: #2E86C1;">Maklumat Lot</h4><hr style="margin:5px 0;">
+                <b>Luas:</b> {luas_m2:.2f} m²<br>
+                <b>Luas:</b> {(luas_m2/4046.856):.4f} Ekar<br>
+                <b>Perimeter:</b> {perimeter:.2f} m<br>
+                <b>Bil. Garis:</b> {bil_garis}
+            </div>
+        """
+        
         folium.Polygon(
-            locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2
+            locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2,
+            popup=folium.Popup(info_lot_html, max_width=250)
         ).add_to(m)
 
-        # Label Luas di tengah poligon
+        # Label Luas Static di tengah
         if p_luas:
             folium.map.Marker(
                 [df['lat'].mean(), df['lon'].mean()],
@@ -162,26 +171,26 @@ if uploaded_file is not None:
             ).add_to(m)
 
         for i in range(len(df)):
-            p1 = df.iloc[i]
-            p2 = df.iloc[(i+1)%len(df)]
+            p1_row = df.iloc[i]
+            p2_row = df.iloc[(i+1)%len(df)]
             
-            # Titik Stesen
+            # Popup Coordinate semasa tekan stesen
+            coord_html = f"<b>STN {int(p1_row['STN'])}</b><br>E: {p1_row['E']:.3f}<br>N: {p1_row['N']:.3f}"
+            
             if p_point:
-                folium.CircleMarker([p1['lat'], p1['lon']], radius=s_point, color='red', fill=True, fill_color='red').add_to(m)
+                folium.CircleMarker([p1_row['lat'], p1_row['lon']], radius=s_point, color='red', fill=True, fill_color='red').add_to(m)
 
-            # No Stesen
             if p_stn:
                 folium.map.Marker(
-                    [p1['lat'], p1['lon']],
-                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: yellow; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1['STN'])}</div>")
+                    [p1_row['lat'], p1_row['lon']],
+                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: yellow; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>"),
+                    popup=folium.Popup(coord_html, max_width=150)
                 ).add_to(m)
 
-            # Bearing & Jarak
             if p_lbl:
-                brg_txt, dst_val, angle, flipped = kira_brg_dst([p1['E'], p1['N']], [p2['E'], p2['N']])
-                mid_lat, mid_lon = (p1['lat'] + p2['lat'])/2, (p1['lon'] + p2['lon'])/2
+                brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
+                mid_lat, mid_lon = (p1_row['lat'] + p2_row['lat'])/2, (p1_row['lon'] + p2_row['lon'])/2
                 flex_dir = "column-reverse" if flipped else "column"
-                
                 folium.map.Marker(
                     [mid_lat, mid_lon],
                     icon=folium.DivIcon(html=f"""
@@ -191,8 +200,15 @@ if uploaded_file is not None:
                         </div>""")
                 ).add_to(m)
 
-        m.fit_bounds(poly_pts)
         folium_static(m, width=1100, height=600)
+
+        # --- JADUAL RINGKASAN DATA (INFO FAIL & LUAS) ---
+        st.subheader("📊 Ringkasan Maklumat Lot")
+        summary_data = {
+            "Perkara": ["Nama Fail", "Luas (m²)", "Luas (Ekar)", "Perimeter (m)", "Bilangan Garis"],
+            "Maklumat": [uploaded_file.name, f"{luas_m2:.2f}", f"{(luas_m2/4046.856):.4f}", f"{perimeter:.2f}", bil_garis]
+        }
+        st.table(pd.DataFrame(summary_data))
 
 st.markdown("---")
 st.caption("Pembangun Sistem: Izzaan | Geomatics PUO | Sidebar Dashboard Mode")
