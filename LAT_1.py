@@ -169,71 +169,70 @@ if uploaded_file is not None:
         luas_m2 = kira_luas(df)
         luas_ekar = luas_m2 / 4046.856
         perimeter = 0
+        features_gis = [] # Senarai untuk GeoJSON
+        
+        # 1. Tambah Poligon ke GeoJSON
+        poly_coords = [[r['lon'], r['lat']] for _, r in df.iterrows()]
+        poly_coords.append(poly_coords[0]) # Tutup poligon
+        features_gis.append({
+            "type": "Feature",
+            "properties": {"Nama": "Lot Tanah", "Luas_m2": round(luas_m2, 3), "Luas_Ekar": round(luas_ekar, 4)},
+            "geometry": {"type": "Polygon", "coordinates": [poly_coords]}
+        })
+
         bil_garis = len(df)
         for i in range(bil_garis):
-            p1 = [df.iloc[i]['E'], df.iloc[i]['N']]
-            p2 = [df.iloc[(i+1)%bil_garis]['E'], df.iloc[(i+1)%bil_garis]['N']]
-            _, d, _, _ = kira_brg_dst(p1, p2)
-            perimeter += d
+            p1_row = df.iloc[i]
+            p2_row = df.iloc[(i+1)%bil_garis]
+            
+            brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
+            perimeter += dst_val
+            
+            # 2. Tambah Point Stesen ke GeoJSON
+            features_gis.append({
+                "type": "Feature",
+                "properties": {"Stesen": int(p1_row['STN']), "E": p1_row['E'], "N": p1_row['N']},
+                "geometry": {"type": "Point", "coordinates": [p1_row['lon'], p1_row['lat']]}
+            })
 
+            # 3. Tambah Garisan (Traverse) ke GeoJSON
+            features_gis.append({
+                "type": "Feature",
+                "properties": {"Bearing": brg_txt, "Jarak": round(dst_val, 3)},
+                "geometry": {"type": "LineString", "coordinates": [[p1_row['lon'], p1_row['lat']], [p2_row['lon'], p2_row['lat']]]}
+            })
+
+        # Lukis di Peta
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
-        
-        # Info Lot semasa klik Poligon
-        info_lot = f"<b>MAKLUMAT LOT:</b><br>Luas: {luas_m2:.2f} m²<br>Luas: {luas_ekar:.4f} Ekar<br>Perimeter: {perimeter:.2f} m"
-        
-        folium.Polygon(
-            locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2,
-            popup=folium.Popup(info_lot, max_width=250)
-        ).add_to(m)
+        folium.Polygon(locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2, popup=f"Luas: {luas_m2:.2f} m²").add_to(m)
 
         # Auto-focus
-        sw = [df['lat'].min(), df['lon'].min()]
-        ne = [df['lat'].max(), df['lon'].max()]
+        sw, ne = [df['lat'].min(), df['lon'].min()], [df['lat'].max(), df['lon'].max()]
         m.fit_bounds([sw, ne])
 
         if p_luas:
-            folium.map.Marker(
-                [df['lat'].mean(), df['lon'].mean()],
-                icon=folium.DivIcon(html=f"""
-                    <div style="text-align: center; width: 200px; margin-left: -100px; pointer-events: none;">
-                        <b style="font-size: {s_luas}pt; color: white; text-shadow: 2px 2px 4px black;">LUAS: {luas_m2:.2f} m²</b>
-                    </div>""")
-            ).add_to(m)
+            folium.map.Marker([df['lat'].mean(), df['lon'].mean()], icon=folium.DivIcon(html=f'<div style="text-align: center; width: 200px; margin-left: -100px; pointer-events: none;"><b style="font-size: {s_luas}pt; color: white; text-shadow: 2px 2px 4px black;">LUAS: {luas_m2:.2f} m²</b></div>')).add_to(m)
 
         for i in range(len(df)):
             p1_row = df.iloc[i]
             p2_row = df.iloc[(i+1)%len(df)]
-            
-            # Info Koordinat semasa klik No Stesen
             info_stn = f"<b>STN: {int(p1_row['STN'])}</b><br>E: {p1_row['E']:.3f}<br>N: {p1_row['N']:.3f}"
             
             if p_point:
-                folium.CircleMarker([p1_row['lat'], p1_row['lon']], radius=s_point, color='red', fill=True, fill_color='red', popup=info_stn).add_to(m)
-            
+                folium.CircleMarker([p1_row['lat'], p1_row['lon']], radius=s_point, color='red', fill=True, popup=info_stn).add_to(m)
             if p_stn:
-                folium.map.Marker(
-                    [p1_row['lat'], p1_row['lon']],
-                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: white; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>"),
-                    popup=info_stn
-                ).add_to(m)
-                
+                folium.map.Marker([p1_row['lat'], p1_row['lon']], icon=folium.DivIcon(html=f"<div style='color: white; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>"), popup=info_stn).add_to(m)
             if p_lbl:
                 brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
                 mid_lat, mid_lon = (p1_row['lat'] + p2_row['lat'])/2, (p1_row['lon'] + p2_row['lon'])/2
                 flex_dir = "column-reverse" if flipped else "column"
-                folium.map.Marker(
-                    [mid_lat, mid_lon],
-                    icon=folium.DivIcon(html=f"""
-                        <div style="transform: rotate({-angle}deg); display: flex; flex-direction: {flex_dir}; align-items: center; justify-content: center; width: 150px; margin-left: -75px; pointer-events: none; line-height: 1.1;">
-                            <div style="font-size: {s_brg}pt; color: #FF0000; font-weight: bold; text-shadow: 0.5px 0.5px 1px black; margin-bottom: 2px;">{brg_txt}</div>
-                            <div style="font-size: {s_brg-1}pt; color: #0000FF; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{dst_val:.2f}m</div>
-                        </div>""")
-                ).add_to(m)
+                folium.map.Marker([mid_lat, mid_lon], icon=folium.DivIcon(html=f'<div style="transform: rotate({-angle}deg); display: flex; flex-direction: {flex_dir}; align-items: center; width: 150px; margin-left: -75px; pointer-events: none;"><div style="font-size: {s_brg}pt; color: #FF0000; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{brg_txt}</div><div style="font-size: {s_brg-1}pt; color: #0000FF; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{dst_val:.2f}m</div></div>')).add_to(m)
 
         folium_static(m, width=1100, height=600)
 
-        # --- EXPORT & JADUAL ---
-        geojson_data = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[ [r['lon'], r['lat']] for _, r in df.iterrows() ] + [[df.iloc[0]['lon'], df.iloc[0]['lat']]] ]}, "properties": {"Luas_m2": luas_m2, "Perimeter": perimeter}}]}
+        # --- DATA GIS LENGKAP ---
+        geojson_final = {"type": "FeatureCollection", "features": features_gis}
+
         st.subheader("📊 Ringkasan Maklumat Lot")
         col_summary, col_export = st.columns([3, 1])
         with col_summary:
@@ -241,7 +240,8 @@ if uploaded_file is not None:
             st.table(pd.DataFrame(summary_data))
         with col_export:
             st.write("📂 **Export Data GIS**")
-            st.download_button(label="🌍 Muat Turun Fail GIS (.geojson)", data=json.dumps(geojson_data), file_name=f"{uploaded_file.name.split('.')[0]}.geojson", mime="application/json", use_container_width=True)
+            st.download_button(label="🌍 Muat Turun Fail GIS (.geojson)", data=json.dumps(geojson_final), file_name=f"{uploaded_file.name.split('.')[0]}.geojson", mime="application/json", use_container_width=True)
+        
         st.subheader("📋 Jadual Koordinat Traverse")
         traverse_df = df[['STN', 'E', 'N']].copy()
         traverse_df['STN'] = traverse_df['STN'].astype(int)
