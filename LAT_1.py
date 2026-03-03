@@ -125,7 +125,7 @@ def kira_luas(df):
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 # --- 5. SIDEBAR (DASHBOARD TETAPAN) ---
-st.sidebar.markdown("### hi, izzaan! 👋") # Tambahan ucapan
+st.sidebar.markdown("### hi, izzaan! 👋") 
 st.sidebar.title("🏠 Dashboard Tetapan")
 st.sidebar.markdown("---")
 p_point = st.sidebar.checkbox("Papar Point Stesen", value=True)
@@ -158,7 +158,6 @@ if uploaded_file is not None:
         coords = [transformer.transform(e, n) for e, n in zip(df['E'], df['N'])]
         df['lon'], df['lat'] = [c[0] for c in coords], [c[1] for c in coords]
         
-        # Inisialisasi peta pada purata lokasi
         m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=19, max_zoom=22)
         Fullscreen(position="topleft").add_to(m)
 
@@ -168,6 +167,7 @@ if uploaded_file is not None:
 
         # Pengiraan Luas & Perimeter
         luas_m2 = kira_luas(df)
+        luas_ekar = luas_m2 / 4046.856
         perimeter = 0
         bil_garis = len(df)
         for i in range(bil_garis):
@@ -178,14 +178,15 @@ if uploaded_file is not None:
 
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
         
-        # Melukis Poligon
+        # Info Lot semasa klik Poligon
+        info_lot = f"<b>MAKLUMAT LOT:</b><br>Luas: {luas_m2:.2f} m²<br>Luas: {luas_ekar:.4f} Ekar<br>Perimeter: {perimeter:.2f} m"
+        
         folium.Polygon(
             locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2,
-            popup=f"Luas: {luas_m2:.2f} m²"
+            popup=folium.Popup(info_lot, max_width=250)
         ).add_to(m)
 
-        # --- AUTO-FOCUS / FIT BOUNDS ---
-        # Ini akan memastikan peta terus zoom ke traverse sebaik sahaja file masuk
+        # Auto-focus
         sw = [df['lat'].min(), df['lon'].min()]
         ne = [df['lat'].max(), df['lon'].max()]
         m.fit_bounds([sw, ne])
@@ -202,13 +203,20 @@ if uploaded_file is not None:
         for i in range(len(df)):
             p1_row = df.iloc[i]
             p2_row = df.iloc[(i+1)%len(df)]
+            
+            # Info Koordinat semasa klik No Stesen
+            info_stn = f"<b>STN: {int(p1_row['STN'])}</b><br>E: {p1_row['E']:.3f}<br>N: {p1_row['N']:.3f}"
+            
             if p_point:
-                folium.CircleMarker([p1_row['lat'], p1_row['lon']], radius=s_point, color='red', fill=True, fill_color='red').add_to(m)
+                folium.CircleMarker([p1_row['lat'], p1_row['lon']], radius=s_point, color='red', fill=True, fill_color='red', popup=info_stn).add_to(m)
+            
             if p_stn:
                 folium.map.Marker(
                     [p1_row['lat'], p1_row['lon']],
-                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: white; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>")
+                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: white; font-weight: bold; font-size: {s_stn}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1_row['STN'])}</div>"),
+                    popup=info_stn
                 ).add_to(m)
+                
             if p_lbl:
                 brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
                 mid_lat, mid_lon = (p1_row['lat'] + p2_row['lat'])/2, (p1_row['lon'] + p2_row['lon'])/2
@@ -224,37 +232,16 @@ if uploaded_file is not None:
 
         folium_static(m, width=1100, height=600)
 
-        # --- EXPORT GIS (GeoJSON) ---
-        geojson_data = {
-            "type": "FeatureCollection",
-            "features": [{
-                "type": "Feature",
-                "geometry": {"type": "Polygon", "coordinates": [[ [r['lon'], r['lat']] for _, r in df.iterrows() ] + [[df.iloc[0]['lon'], df.iloc[0]['lat']]] ]},
-                "properties": {"Luas_m2": luas_m2, "Perimeter": perimeter}
-            }]
-        }
-
-        # --- JADUAL RINGKASAN DATA ---
+        # --- EXPORT & JADUAL ---
+        geojson_data = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[ [r['lon'], r['lat']] for _, r in df.iterrows() ] + [[df.iloc[0]['lon'], df.iloc[0]['lat']]] ]}, "properties": {"Luas_m2": luas_m2, "Perimeter": perimeter}}]}
         st.subheader("📊 Ringkasan Maklumat Lot")
         col_summary, col_export = st.columns([3, 1])
         with col_summary:
-            summary_data = {
-                "Perkara": ["Nama Fail", "Luas (m²)", "Luas (Ekar)", "Perimeter (m)"],
-                "Maklumat": [uploaded_file.name, f"{luas_m2:.2f}", f"{(luas_m2/4046.856):.4f}", f"{perimeter:.2f}"]
-            }
+            summary_data = {"Perkara": ["Nama Fail", "Luas (m²)", "Luas (Ekar)", "Perimeter (m)"], "Maklumat": [uploaded_file.name, f"{luas_m2:.2f}", f"{luas_ekar:.4f}", f"{perimeter:.2f}"]}
             st.table(pd.DataFrame(summary_data))
-        
         with col_export:
             st.write("📂 **Export Data GIS**")
-            st.download_button(
-                label="🌍 Muat Turun Fail GIS (.geojson)",
-                data=json.dumps(geojson_data),
-                file_name=f"{uploaded_file.name.split('.')[0]}.geojson",
-                mime="application/json",
-                use_container_width=True
-            )
-
-        # --- JADUAL KOORDINAT TERPERINCI ---
+            st.download_button(label="🌍 Muat Turun Fail GIS (.geojson)", data=json.dumps(geojson_data), file_name=f"{uploaded_file.name.split('.')[0]}.geojson", mime="application/json", use_container_width=True)
         st.subheader("📋 Jadual Koordinat Traverse")
         traverse_df = df[['STN', 'E', 'N']].copy()
         traverse_df['STN'] = traverse_df['STN'].astype(int)
