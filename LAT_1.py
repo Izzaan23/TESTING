@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import folium
 from streamlit_folium import folium_static
+from folium.plugins import Fullscreen  # Tambah plugin fullscreen
 from pyproj import Transformer
 import json
 import os
@@ -31,7 +32,7 @@ if not st.session_state.logged_in:
             new_p = st.text_input("Kata Laluan Baru", type="password")
             conf_p = st.text_input("Sahkan Kata Laluan", type="password")
             if st.button("Kemaskini Kata Laluan", use_container_width=True):
-                if new_p == KEY_p and new_p != "":
+                if new_p == conf_p and new_p != "":
                     st.session_state.db_password = new_p
                     st.session_state.page = "login"
                     st.success("✅ Berjaya! Sila log masuk semula.")
@@ -63,15 +64,16 @@ def kira_brg_dst(p1, p2):
     brg = np.degrees(np.arctan2(de, dn))
     if brg < 0: brg += 360
     d = int(brg); m = int((brg-d)*60); s = round((((brg-d)*60)-m)*60,0)
-    # Kira sudut putaran untuk label (pusingan matematik)
-    # Kita guna angle dari paksi-X (Easting)
+    
+    # Kira angle untuk rotation label supaya selari dengan line
+    # Paksi Easting/Northing Cassini
     angle = np.degrees(np.arctan2(p2[1] - p1[1], p2[0] - p1[0]))
-    # Pastikan teks sentiasa tegak (tidak terbalik)
+    # Adjust supaya text tak terbalik (upside down)
     if angle > 90: angle -= 180
     if angle < -90: angle += 180
+    
     return f"{d}°{m:02d}'{s:02.0f}\"", dist, angle
 
-# Fungsi kira luas poligon (Shoelace Formula)
 def kira_luas(df):
     x = df['E'].values
     y = df['N'].values
@@ -106,28 +108,20 @@ if uploaded_file is not None:
             location=[df['lat'].mean(), df['lon'].mean()], 
             zoom_start=19, max_zoom=22, control_scale=True
         )
+        
+        # Tambah Butang Fullscreen
+        Fullscreen(position="topleft", title="Skrin Penuh", title_cancel="Keluar").add_to(m)
 
         if p_sat:
             google_url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
             folium.TileLayer(tiles=google_url, attr='Google', name='Google Satellite', max_zoom=22, max_native_zoom=20).add_to(m)
 
-        # --- 1. POPUP UNTUK LOT (POLIGON) ---
         luas = kira_luas(df)
-        info_lot = f"""
-        <div style="width:150px">
-            <b>Info Lot:</b><br>
-            Jumlah Stesen: {len(df)}<br>
-            Luas: {luas:.2f} m²<br>
-            Luas: {(luas/4046.86):.3f} Ekar
-        </div>
-        """
+        info_lot = f"""<div style='width:150px'><b>Info Lot:</b><br>Jumlah Stesen: {len(df)}<br>Luas: {luas:.2f} m²<br>Luas: {(luas/4046.86):.3f} Ekar</div>"""
+        
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
         folium.Polygon(
-            locations=poly_pts, 
-            color="cyan", 
-            weight=3, 
-            fill=True, 
-            fill_opacity=0.2,
+            locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2,
             popup=folium.Popup(info_lot, max_width=200)
         ).add_to(m)
 
@@ -135,42 +129,28 @@ if uploaded_file is not None:
             p1 = df.iloc[i]
             p2 = df.iloc[(i+1)%len(df)]
             
-            # --- 2. POPUP UNTUK STESEN ---
             if p_stn:
-                info_stn = f"""
-                <div style="width:120px">
-                    <b>Stesen: {int(p1['STN'])}</b><br>
-                    E: {p1['E']:.3f}<br>
-                    N: {p1['N']:.3f}
-                </div>
-                """
+                info_stn = f"<div style='width:120px'><b>Stesen: {int(p1['STN'])}</b><br>E: {p1['E']:.3f}<br>N: {p1['N']:.3f}</div>"
                 folium.map.Marker(
                     [p1['lat'], p1['lon']],
-                    icon=folium.DivIcon(html=f"""<div style="font-family: Arial; color: yellow; font-weight: bold; 
-                    font-size: {s_font}pt; text-shadow: 2px 2px 3px black; width: 40px;">{int(p1['STN'])}</div>"""),
+                    icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: yellow; font-weight: bold; font-size: {s_font}pt; text-shadow: 2px 2px 3px black; width: 40px;'>{int(p1['STN'])}</div>"),
                     popup=folium.Popup(info_stn, max_width=150)
                 ).add_to(m)
-                
-                folium.CircleMarker(
-                    [p1['lat'], p1['lon']], 
-                    radius=5, color='red', fill=True, fill_color='red',
-                    popup=folium.Popup(info_stn, max_width=150)
-                ).add_to(m)
+                folium.CircleMarker([p1['lat'], p1['lon']], radius=5, color='red', fill=True, fill_color='red', popup=folium.Popup(info_stn, max_width=150)).add_to(m)
 
-            # --- BAHAGIAN YANG DIUBAH (LABEL SELARI DENGAN LINE) ---
+            # --- BAHAGIAN LABEL (SELARI DENGAN LINE) ---
             if p_lbl:
                 brg_txt, dst_val, angle = kira_brg_dst([p1['E'], p1['N']], [p2['E'], p2['N']])
                 mid_lat, mid_lon = (p1['lat'] + p2['lat'])/2, (p1['lon'] + p2['lon'])/2
                 
-                # Kita gunakan transform: rotate() dalam CSS untuk pusingkan label
+                # Gunakan CSS transform rotate untuk baringkan label ikut line
                 folium.map.Marker(
                     [mid_lat, mid_lon],
                     icon=folium.DivIcon(html=f"""
                         <div style="
                             transform: rotate({-angle}deg); 
-                            transform-origin: center;
                             background: white; 
-                            border: 1px solid red; 
+                            border: 1px solid gray; 
                             padding: 2px; 
                             border-radius: 3px; 
                             font-size: {s_font-2}pt; 
@@ -178,8 +158,7 @@ if uploaded_file is not None:
                             font-weight: bold; 
                             text-align: center; 
                             width: 85px; 
-                            white-space: nowrap;
-                            border: 1px solid gray;">
+                            white-space: nowrap;">
                             {brg_txt}<br>{dst_val:.2f}m
                         </div>""")
                 ).add_to(m)
@@ -187,7 +166,6 @@ if uploaded_file is not None:
         m.fit_bounds(poly_pts)
         folium_static(m, width=1100, height=600)
 
-        # --- 7. EKSPORT DATA ---
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
