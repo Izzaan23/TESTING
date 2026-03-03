@@ -45,7 +45,7 @@ if not st.session_state.logged_in:
             u_id = st.text_input("ID Pengguna")
             u_pass = st.text_input("Kata Laluan", type="password")
             if st.button("🔓 Log Masuk", use_container_width=True):
-                if u_id == "11" and u_pass == st.session_state.db_password:
+                if u_id == "admin" and u_pass == st.session_state.db_password:
                     st.session_state.logged_in = True
                     st.rerun()
                 else:
@@ -180,4 +180,5 @@ if uploaded_file is not None:
 
 st.markdown("---")
 st.caption("Pembangun Sistem: Izzaan | Geomatics PUO | Popup Info Mode")
+
 
