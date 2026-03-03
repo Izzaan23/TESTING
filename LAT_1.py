@@ -158,6 +158,7 @@ if uploaded_file is not None:
         coords = [transformer.transform(e, n) for e, n in zip(df['E'], df['N'])]
         df['lon'], df['lat'] = [c[0] for c in coords], [c[1] for c in coords]
         
+        # Inisialisasi peta pada purata lokasi
         m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=19, max_zoom=22)
         Fullscreen(position="topleft").add_to(m)
 
@@ -177,10 +178,17 @@ if uploaded_file is not None:
 
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
         
+        # Melukis Poligon
         folium.Polygon(
             locations=poly_pts, color="cyan", weight=3, fill=True, fill_opacity=0.2,
             popup=f"Luas: {luas_m2:.2f} m²"
         ).add_to(m)
+
+        # --- AUTO-FOCUS / FIT BOUNDS ---
+        # Ini akan memastikan peta terus zoom ke traverse sebaik sahaja file masuk
+        sw = [df['lat'].min(), df['lon'].min()]
+        ne = [df['lat'].max(), df['lon'].max()]
+        m.fit_bounds([sw, ne])
 
         if p_luas:
             folium.map.Marker(
