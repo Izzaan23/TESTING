@@ -210,5 +210,15 @@ if uploaded_file is not None:
         }
         st.table(pd.DataFrame(summary_data))
 
+        # --- JADUAL KOORDINAT TERPERINCI (TRAVERSE) ---
+        st.subheader("📋 Jadual Koordinat Traverse")
+        # Menyusun data untuk paparan yang kemas
+        traverse_df = df[['STN', 'E', 'N']].copy()
+        traverse_df['STN'] = traverse_df['STN'].astype(int)
+        traverse_df['E'] = traverse_df['E'].map('{:,.3f}'.format)
+        traverse_df['N'] = traverse_df['N'].map('{:,.3f}'.format)
+        
+        st.dataframe(traverse_df, use_container_width=True, hide_index=True)
+
 st.markdown("---")
 st.caption("Pembangun Sistem: Izzaan | Geomatics PUO | Sidebar Dashboard Mode")
