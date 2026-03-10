@@ -79,7 +79,7 @@ if not st.session_state.logged_in:
             if st.button("🔓 Log Masuk", use_container_width=True):
                 if u_id in ["11", "12", "13"] and u_pass == current_db_pass:
                     st.session_state.logged_in = True
-                    st.session_state.user_id = u_id # Simpan ID untuk paparan nama
+                    st.session_state.user_id = u_id 
                     st.rerun()
                 else:
                     st.error("ID atau Kata Laluan salah.")
@@ -117,8 +117,7 @@ def kira_luas(df):
     x, y = df['E'].values, df['N'].values
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
-# --- 5. SIDEBAR ---
-# --- PERUBAHAN DI SINI: Paparan nama mengikut ID ---
+# --- 5. SIDEBAR (STRUKTUR AWAL) ---
 names = {"11": "izzaan", "12": "adam muqhris", "13": "alif"}
 user_display = names.get(st.session_state.user_id, "Pengguna")
 st.sidebar.markdown(f"### hi, {user_display}! 👋") 
@@ -133,9 +132,6 @@ s_brg = st.sidebar.slider("Saiz Teks Brg/Jarak", 5, 20, 10)
 p_luas = st.sidebar.checkbox("Papar Label Luas", value=True)
 s_luas = st.sidebar.slider("Saiz Label Luas", 5, 30, 17)
 p_sat = st.sidebar.toggle("Papar Imej Satelit", value=True)
-if st.sidebar.button("🚪 Log Keluar", use_container_width=True):
-    st.session_state.logged_in = False
-    st.rerun()
 
 # --- 6. PLOTTER UTAMA ---
 uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["csv"])
@@ -160,7 +156,7 @@ if uploaded_file is not None:
         perimeter = 0
         features_gis = []
         
-        # 1. TAMBAH POLIGON (LUAS) KE GIS
+        # 1. TAMBAH POLIGON KE GIS
         poly_coords = [[r['lon'], r['lat']] for _, r in df.iterrows()]
         poly_coords.append(poly_coords[0])
         features_gis.append({
@@ -179,28 +175,29 @@ if uploaded_file is not None:
             brg_txt, dst_val, angle, flipped = kira_brg_dst([p1_row['E'], p1_row['N']], [p2_row['E'], p2_row['N']])
             perimeter += dst_val
             
-            # 2. TAMBAH POINT STESEN KE GIS
             features_gis.append({
                 "type": "Feature",
-                "properties": {
-                    "Stesen": int(p1_row['STN']), 
-                    "Easting": p1_row['E'], 
-                    "Northing": p1_row['N']
-                },
+                "properties": {"Stesen": int(p1_row['STN']), "Easting": p1_row['E'], "Northing": p1_row['N']},
                 "geometry": {"type": "Point", "coordinates": [p1_row['lon'], p1_row['lat']]}
             })
 
-            # 3. TAMBAH GARISAN (BEARING & JARAK) KE GIS
             features_gis.append({
                 "type": "Feature",
-                "properties": {
-                    "Dari_Stn": int(p1_row['STN']),
-                    "Ke_Stn": int(p2_row['STN']),
-                    "Bearing": brg_txt, 
-                    "Jarak": round(dst_val, 3)
-                },
+                "properties": {"Dari_Stn": int(p1_row['STN']), "Ke_Stn": int(p2_row['STN']), "Bearing": brg_txt, "Jarak": round(dst_val, 3)},
                 "geometry": {"type": "LineString", "coordinates": [[p1_row['lon'], p1_row['lat']], [p2_row['lon'], p2_row['lat']]]}
             })
+
+        # --- PERUBAHAN DI SINI: Pindahkan butang eksport ke sidebar ---
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("💾 Eksport Data")
+        geojson_final = {"type": "FeatureCollection", "features": features_gis}
+        st.sidebar.download_button(
+            label="🌍 Muat Turun GIS (.geojson)", 
+            data=json.dumps(geojson_final), 
+            file_name=f"{uploaded_file.name.split('.')[0]}.geojson", 
+            mime="application/json", 
+            use_container_width=True
+        )
 
         poly_pts = [[r['lat'], r['lon']] for _, r in df.iterrows()]
         info_lot = f"<b>MAKLUMAT LOT:</b><br>Luas: {luas_m2:.2f} m²<br>Luas: {luas_ekar:.4f} Ekar<br>Perimeter: {perimeter:.2f} m"
@@ -227,15 +224,18 @@ if uploaded_file is not None:
                 folium.map.Marker([mid_lat, mid_lon], icon=folium.DivIcon(html=f'<div style="transform: rotate({-angle}deg); display: flex; flex-direction: {flex_dir}; align-items: center; width: 150px; margin-left: -75px; pointer-events: none;"><div style="font-size: {s_brg}pt; color: #FF0000; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{brg_txt}</div><div style="font-size: {s_brg-1}pt; color: #0000FF; font-weight: bold; text-shadow: 0.5px 0.5px 1px black;">{dst_val:.2f}m</div></div>')).add_to(m)
 
         folium_static(m, width=1100, height=600)
-        geojson_final = {"type": "FeatureCollection", "features": features_gis}
+        
         st.subheader("📊 Ringkasan Maklumat Lot")
-        col_summary, col_export = st.columns([3, 1])
-        with col_summary:
-            st.table(pd.DataFrame({"Perkara": ["Nama Fail", "Luas (m²)", "Luas (Ekar)", "Perimeter (m)"], "Maklumat": [uploaded_file.name, f"{luas_m2:.2f}", f"{luas_ekar:.4f}", f"{perimeter:.2f}"]}))
-        with col_export:
-            st.download_button(label="🌍 Muat Turun GIS (.geojson)", data=json.dumps(geojson_final), file_name=f"{uploaded_file.name.split('.')[0]}.geojson", mime="application/json", use_container_width=True)
+        st.table(pd.DataFrame({"Perkara": ["Nama Fail", "Luas (m²)", "Luas (Ekar)", "Perimeter (m)"], "Maklumat": [uploaded_file.name, f"{luas_m2:.2f}", f"{luas_ekar:.4f}", f"{perimeter:.2f}"]}))
+        
         st.subheader("📋 Jadual Koordinat Traverse")
         st.dataframe(df[['STN', 'E', 'N']], use_container_width=True, hide_index=True)
+
+# Tambah butang log keluar di bawah sekali di sidebar
+st.sidebar.markdown("---")
+if st.sidebar.button("🚪 Log Keluar", use_container_width=True):
+    st.session_state.logged_in = False
+    st.rerun()
 
 st.markdown("---")
 st.caption("Pembangun Sistem: Izzaan | Geomatics PUO")
